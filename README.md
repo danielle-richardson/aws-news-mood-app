@@ -411,7 +411,7 @@ Now that the Lambda function is ready, we will create an **API Gateway** to expo
 ```
 ![Postman Results](img/postman.png)
 
-All Done! Thank you for following along. 
+All Done!! Thank you for following along. 
 
 ### Clean Up
 
