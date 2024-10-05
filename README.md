@@ -16,29 +16,39 @@ This project demonstrates how to use AWS services to build a serverless applicat
 - **Amazon Comprehend**: Determines the sentiment of news articles.
 - **Amazon CloudWatch**: Logs function invocations for debugging and performance monitoring.
 
+### Prerequisite: Get an API Key from newsapi.org
+
+Before starting, you need to **sign up** for an API key from [newsapi.org](https://newsapi.org/). This key will allow your Lambda function to fetch top news stories from the News API.
+
+1. Go to [newsapi.org](https://newsapi.org/).
+2. Sign up and obtain your API key.
+3. You will use this API key in your Lambda function code to fetch news articles.
+
 ## Setup
 
 ### Step 1: AWS Role Creation
 
 1. **Open the IAM Console** and create a new role with **Lambda** as the trusted entity.
 2. Attach the **`AWSLambdaBasicExecutionRole`** to grant permissions for CloudWatch logging.
-3. After creating the role, attach a custom inline policy that grants specific permissions for **DynamoDB** and **Comprehend**. This policy allows your Lambda function to interact with DynamoDB and perform sentiment analysis using Comprehend.
+3. After creating the role, attach the custom inline policy that grants specific permissions for **DynamoDB** and **Comprehend**. This policy allows your Lambda function to interact with DynamoDB and perform sentiment analysis using Comprehend.
 
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "dynamodb:PutItem",
-        "dynamodb:GetItem",
-        "dynamodb:Scan",
-        "comprehend:DetectSentiment"
-      ],
-      "Resource": "*"
-    }
-  ]
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"dynamodb:PutItem",
+				"dynamodb:GetItem",
+				"dynamodb:Scan",
+                "dynamodb:Query",
+				"dynamodb:DeleteItem",
+				"comprehend:DetectSentiment"
+			],
+			"Resource": "*"
+		}
+	]
 }
 ```
 
@@ -53,12 +63,16 @@ In this step, we will create a DynamoDB table to store news articles and their a
 - **Sort Key**: `timestamp` (String)
 3. Click **Create**.
 
+![Create Dynamo Table](img/dynamo-create.png)
+
 The primary key is `sentiment`, which will store values like `POSITIVE`, `NEGATIVE`, or `NEUTRAL`. The sort key is `timestamp`, which stores the time the news article was analyzed and stored.
 
 #### Verify Table Creation
 
-1. Once the table is created, go to the **Explore table items** tab in the table view.
+1. Once the table is created, go to the **Explore table items**.
 2. You should see an empty table with no items yet. This will be populated after your Lambda function inserts news articles and their sentiment.
+
+![Dynamo Table Items Empty](img/dynamo-items-empty.png)
 
 ### Step 3: AWS Lambda for Inserting News and Sentiment
 
@@ -68,11 +82,11 @@ Create a new **Lambda function** to insert news articles and analyze their senti
 - **Runtime**: Python 3.12
 - **Role**: Attach the role you created earlier with access to DynamoDB and Comprehend.
 
+![Create Lambda Function](img/lambda-create.png)
+
 #### Add Python Code:
 
-Here is the Python code for the Lambda function:
-
-Add API key from newsapi.org 
+Add the following code to the Lambda function. Replace the placeholder values like the API Key with the one you obtained from newsapi.org in the **`findNews`** function. 
 
 ``` python
 import requests
@@ -117,7 +131,7 @@ def findNews():
     #News credit to newsapi.org
     #Fetch headlines using the API
     #IMPORTANT: Register in newsapi.org to get your own API key, it's super easy!
-    response = requests.get("https://newsapi.org/v2/top-headlines?country=us&category=business&apiKey=84e3ef10a0b44603a7c64de19aca7848")
+    response = requests.get("https://newsapi.org/v2/top-headlines?country=us&category=business&apiKey=ADD YOUR API KEY")
     d=response.json()
     if (d['status']) == 'ok':
         for article in d['articles']:
@@ -147,11 +161,33 @@ def insertDynamo(sentiment,newsTitle,timestamp):
        )
 ```
 
+### Bonus: How to Install Python Dependencies on Lambda
+
+To include external Python libraries (like `requests`) in your AWS Lambda function, follow these steps:
+
+1. **Create a folder** on your local computer where you will place your Lambda code.
+2. **Add Lambda files** (your Python code) into this folder.
+3. **Open your terminal** and `cd` into the folder.
+4. **Install the `requests` library** by running this command:
+   ```bash
+   pip install requests -t .
+   ```
+You should see several new folders for the installed dependencies inside your directory.
+
+![Requests Dependencies Folders](img/requests-folders.png)
+
+5. Highlight **all the folders and files inside the main folder** (not the folder itself) and compress them into a `.zip` file.
+   
+   **Tip**: Highlighting all the contents inside the folder (instead of zipping the main folder) prevents error messages when uploading to Lambda.
+
+6. In the **AWS Lambda Console**, go to your Lambda function.
+7. Click on **Upload from** > **.zip file**, and choose the zip file you just created. You should now see your files.
+
 ### Step 4: Deploy and Test
 
-#### INSERT Operation
+#### Creating an INSERT Operation
 
-1. Click **Deploy**.
+1. Once the code is added, click **Deploy**.
 2. Click **Test** to create a new test event.
     - Name the event: **InsertTest**.
     - Choose the template: **Hello World**.
@@ -164,8 +200,10 @@ def insertDynamo(sentiment,newsTitle,timestamp):
     ```
 
 3. Click **Save**.
-4. Click **Test** to execute the function.
+4. Click **Test** to execute the function. You should receive a confirmation message that the Executing function: succeeded. 
 5. Go to **DynamoDB Console**, open the `news` table, and click on **Explore table items** to view the inserted data.
+
+![Dynamo Results](img/insert-results.png)
 
 > **Note**: This only fetches and inserts the title of the news articles into the table. If you want to include more information, modify the Lambda function to pass more fields such as the description, URL, or author.
 
@@ -292,40 +330,49 @@ To test the Lambda function, configure a test event in the Lambda console:
 ```
 - After setting up the test event, run it and check the Execution Log/Results to see if the function successfully queries the DynamoDB table and returns the expected news articles.
 
-#### Refine the Results
-
-The current configuration returns the most recent news articles first and limits the results to 10.  
-If needed, you can modify the `Limit` value to return more or fewer articles, or adjust the sorting order by changing the `ScanIndexForward` parameter.
-
 ### Step 7: Create and Secure API Gateway to Expose Lambda
 
 Now that the Lambda function is ready, we will create an **API Gateway** to expose this Lambda function as a backend service and secure it using API keys.
 
 1. **Go to the API Gateway Console**.
-2. **Create a new API**:
+2. **Create a new Rest API**:
    - **API Name**: `ReadNews`
-   - **Endpoint Type**: REST
 3. **Create a Resource** under your API:
    - **Resource Name**: `NewsReader`
-4. **Create a POST Method** for this resource and integrate it with your Lambda function (e.g., `fetchnewsbasedonsentiment`).
+4. **Create a POST Method** for this resource and integrate it with your Lambda function.
+
+![API Post Method](img/api-post-method.png)
+
+5. **Deploy the API**:
+   - Click on **Actions** > **Deploy API**.
+   - Create a new stage:
+     - **Stage Name**: `Dev`
+     - **Description**: Initial deployment  
 
 ### Secure API with API Keys
 
 1. **Create Usage Plan**:
-   - **Go to the API Gateway Console** and click on **Usage Plans**.
-   - **Details**: Create a new usage plan, and associate it with the API stage in the next steps.
-   - **Associated API Stages**: Add the `ReadNews` API - **Dev** (Stage) and click the checkmark.
+   - In the API Gateway you just created click on **Usage Plans**.
+   - Create a new usage plan, and associate it with the API stage in the next steps.
 
-2. **Create API Keys**:
-   - In the **Usage Plan**, under **API Keys**, click **Create API Key**.
-   - After creating the API key, copy it for later use.
+![Create Usage Plan](img/usage-plan.png)
+
+   - Click **Add API Stage**: Add the `ReadNews` API - **Dev** (Stage).
+   - In the **Usage Plan**, under **Associated API Keys**, click **Add API Key** and add your API key from newsapi.org. 
+
+![Add API Key](img/api-key.png)
 
 3. **Enforce API Key Requirement**:
    - Go back to the **API Gateway Console**.
    - Under your API, navigate to **Resources**.
    - Select the **POST Method** under **NewsReader**.
-   - In **Method Request**, set **API Key Required** to **true**.
-   - **Action** > **Deploy API** to the **Dev** stage with a description like: `Added API Key`.
+   - In **Method Request**, click **Edit**, set **API Key Required** to **true** by checking the box.
+
+![API Required](img/api-required.png)
+
+   - Click **Actions** > **Deploy API** to the **Dev** stage and add a description like: `Added API Key requirement`.
+   - After deployment, expand the Dev stage, click on the **POST method** to get the **Invoke URL**.
+   - Copy the **Invoke URL** for testing or future use.
 
 
 ### Test API with Postman
@@ -361,3 +408,34 @@ Now that the Lambda function is ready, we will create an **API Gateway** to expo
 {
    "sentiment": "POSITIVE"
 }
+```
+![Postman Results](img/postman.png)
+
+All Done! Thank you for following along. 
+
+### Clean Up
+
+To avoid ongoing costs for resources you might not use in the future, it's a good idea to clean up the AWS resources that were created. Here’s how to do that:
+
+1. **Delete the DynamoDB Table**:
+   - Go to the **DynamoDB Console**.
+   - Find the `news` table, select it, and click **Delete**.
+
+2. **Delete the Lambda Functions**:
+   - Go to the **Lambda Console**.
+   - Select each Lambda function you created (`insertsentimentdynamo`, `fetchnewsbasedonsentiment`), and delete them.
+
+3. **Delete the API Gateway**:
+   - Go to the **API Gateway Console**.
+   - Select the `ReadNews` API and click **Delete API** under **Actions**.
+
+4. **Remove the CloudWatch Log Groups**:
+   - Go to the **CloudWatch Console**.
+   - In the left-hand menu, click **Log groups**.
+   - Find the log groups associated with your Lambda functions and delete them.
+
+5. **Remove any IAM Roles and Policies**:
+   - Go to the **IAM Console**.
+   - Navigate to **Roles**, find the roles you created for this project, and delete them.
+   - Also, delete any custom inline policies you may have attached.
+
